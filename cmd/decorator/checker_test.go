@@ -55,15 +55,13 @@ func TestCheckDecorAndGetParam(t *testing.T) {
 
 	targetPkg := "github.com/dengsgo/go-decorator/cmd/decorator"
 	for index, c := range cas {
-		param, err := checkDecorAndGetParam(targetPkg,
-			"logging", c.in)
+		param, err := checkDecorAndGetParam(targetPkg, "logging", c.in)
 		if err != nil {
 			t.Fatal("checkDecorAndGetParam should err == nil but got error", err)
 		}
 		for i, v := range c.r {
 			if param[i] != v {
-				t.Fatalf("checkDecorAndGetParam should param == r but got: %s != %s, case index: %+v, i: %+v",
-					param[i], v, index, i)
+				t.Fatalf("checkDecorAndGetParam should param == r but got: %s != %s, case index: %+v, i: %+v", param[i], v, index, i)
 			}
 		}
 	}
@@ -287,8 +285,7 @@ func TestResolveLinterFromAnnotation(t *testing.T) {
 	for i, v := range cas {
 		err := resolveLinterFromAnnotation(v, args)
 		if err != nil {
-			log.Fatalf("resolveLinterFromAnnotation(s) should pass, i:%+v, err: %+v, case: %s\n",
-				i, err, v)
+			log.Fatalf("resolveLinterFromAnnotation(s) should pass, i:%+v, err: %+v, case: %s\n", i, err, v)
 		}
 	}
 	result := map[string]string{

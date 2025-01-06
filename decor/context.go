@@ -23,8 +23,8 @@ package decor
 type TKind uint8
 
 const (
-	KFunc   TKind = iota // top-level function
-	KMethod              // method
+	KFunc   TKind = iota // top-level function   // 顶级函数
+	KMethod              // method				// 成员方法
 )
 
 // Context The context of the decorator.
@@ -42,26 +42,34 @@ const (
 //
 // You can only change the value of the input and output parameters. Don't try to change
 // their type and quantity, as this will trigger runtime panic!!!
+//
+// Context 提供了装饰器所需的所有信息，包括输入参数、输出结果、目标函数名称等。
 type Context struct {
 	// Target types above and below the decorator
+	// 目标类型: 函数 or 方法
 	Kind TKind
 
 	// The input parameters of the decorated function
+	// 入参列表，它是一个 []any 类型，表示可以接受任意类型的输入参数。
 	TargetIn,
 
 	// TargetOut : The result parameters of the decorated function
+	// 输出结果，它是一个 []any 类型，表示可以接受任意类型的返回值。
 	TargetOut []any
 
 	// The function or method name of the target
+	// 目标名称
 	TargetName string
 
 	// If Kind is 'KMethod', it is the Receiver of the target
+	// 如果目标是一个方法，这里保存该方法的接收者（即方法所属的对象）。如果目标是函数，则该字段为 nil。
 	Receiver any
 
 	// The Non-parameter Packaging of the Objective Function // inner
 	Func func()
 
 	// The number of times the objective function was called
+	// 记录目标函数被调用的次数。
 	doRef int64
 }
 

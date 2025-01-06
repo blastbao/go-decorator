@@ -163,10 +163,12 @@ func compile(args []string) error {
 							friendlyIDEPosition(fset, da.doc.Pos()))
 					}
 				}
+
 				params, err := checkDecorAndGetParam(decorPkgPath, decorName, decorParams)
 				if err != nil {
 					logs.Error(err, biSymbol, "Decor:", friendlyIDEPosition(fset, da.doc.Pos()))
 				}
+
 				ra := builderReplaceArgs(fd, decorName, params, gi)
 				rs, err := replace(ra)
 				if err != nil {
@@ -242,12 +244,14 @@ func visitAstDecl(f *ast.File, funVisitor func(*ast.FuncDecl) bool) {
 		return
 	}
 LOOP:
+	// 遍历每个声明
 	for _, t := range f.Decls {
 		if t == nil {
 			continue
 		}
 		switch decl := t.(type) {
 		case *ast.FuncDecl:
+			// 对于函数声明，执行 visitor ，如果返回 true 则停止遍历
 			if funVisitor(decl) {
 				break LOOP
 			}

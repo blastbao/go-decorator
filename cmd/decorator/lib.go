@@ -196,6 +196,21 @@ func builderReplaceArgs(f *ast.FuncDecl, decorName string, decorParams []string,
 	return ra
 }
 
+// typeString 函数的核心功能是将 Go 语言的表达式类型（ast.Expr）转换为对应的字符串表示，并在有特殊情况（如变长参数类型）时进行适当的格式化。
+//
+// 示例
+//
+// case1 简单标识符：
+//   - 输入：ast.NewIdent("myVar")
+//   - 输出："myVar"
+//
+// case2 选择器表达式
+//   - 输入：&ast.SelectorExpr{X: ast.NewIdent("pkg"), Sel: ast.NewIdent("Func")}
+//   - 输出："pkg.Func"
+//
+// case3 变长参数
+//   - 输入：表示变长参数的 AST，如 ...int
+//   - 输出："[]int"
 func typeString(expr ast.Expr) string {
 	var output []byte
 	buffer := bytes.NewBuffer(output)
