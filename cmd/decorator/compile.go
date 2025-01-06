@@ -26,11 +26,13 @@ var printerCfg = &printer.Config{Tabwidth: 8, Mode: printer.SourcePos}
 func compile(args []string) error {
 	{
 		var err error
+		// go list -json -find 会返回当前模块下的包信息
 		packageInfo, err = getPackageInfo("")
 		if err != nil || packageInfo.Module.Path == "" {
 			logs.Error("doesn't seem to be a Go project:", err)
 		}
 	}
+
 	files := make([]string, 0, len(args))
 	projectName := packageInfo.Module.Path
 	logs.Debug("projectName", projectName)
@@ -75,6 +77,7 @@ func compile(args []string) error {
 			friendlyIDEPosition(fset, errPos))
 	}
 
+	//
 	for file, f := range pkg.Files {
 		logs.Debug("file Parse", file)
 		if file == decorWrappedCodeFilePath {
@@ -85,29 +88,39 @@ func compile(args []string) error {
 		//	continue
 		//}
 		logs.Debug(f.Decls)
+
+		// imp 中存储了 f 的所有导入项
 		imp := newImporter(f)
 
 		updated := false
 
+		// 遍历文件 f 中每个函数声明
 		visitAstDecl(f, func(fd *ast.FuncDecl) (r bool) {
+			// 无注释则忽略
 			if fd.Doc == nil || fd.Doc.List == nil || len(fd.Doc.List) == 0 {
 				return
 			}
-			originPath = file
 			//log.Printf("%+v\n", fd)
+
+			originPath = file
 			var collDecors []*decorAnnotation
 			mapDecors := newMapV[string, *ast.Comment]()
+
+			// 遍历注释
 			for i := len(fd.Doc.List) - 1; i >= 0; i-- {
 				doc := fd.Doc.List[i]
+				// 是否以 "//go:decor " 开头
 				if !strings.HasPrefix(doc.Text, decoratorScanFlag) {
 					break
 				}
 				logs.Debug("HIT:", doc.Text)
+				// 从 decor 注释解析出 decorFuncName, decorFuncArgs
 				decorName, decorArgs, err := parseDecorAndParameters(doc.Text[len(decoratorScanFlag):])
 				logs.Debug(decorName, decorArgs, err)
 				if err != nil {
 					logs.Error(err, biSymbol, friendlyIDEPosition(fset, doc.Pos()))
 				}
+				// 不许重复修饰
 				if !mapDecors.put(decorName, doc) {
 					logs.Error("cannot use the same decorator for repeated decoration", biSymbol,
 						"Decor:", friendlyIDEPosition(fset, doc.Pos()), biSymbol,
@@ -115,12 +128,16 @@ func compile(args []string) error {
 				}
 				collDecors = append(collDecors, newDecorAnnotation(doc, decorName, decorArgs))
 			}
+
+			// 当前函数无需修饰
 			if len(collDecors) == 0 {
 				return
 			}
 
 			logs.Info("find the entry for using the decorator", friendlyIDEPosition(fset, fd.Pos()))
 			logs.Debug("collDecors", collDecors)
+
+			// 生成一个随机标识符
 			gi := newGenIdentId()
 			for _, da := range collDecors {
 				logs.Debug("handler:", da.doc.Text)
@@ -132,38 +149,46 @@ func compile(args []string) error {
 				//}
 				decorName, decorParams := da.name, da.parameters
 				logs.Debug(decorName, decorParams)
+
 				// check self is not decorator function
+				// 判断 f 是否已导入 "github.com/dengsgo/go-decorator/decor"
 				pkgDecorName, ok := imp.importedPath(decoratorPackagePath)
 				if !ok {
+					// 未导入报错
 					logs.Error(msgDecorPkgNotImported, biSymbol,
 						"Target:", friendlyIDEPosition(fset, fd.Pos()), biSymbol,
 						"Decor:", friendlyIDEPosition(fset, da.doc.Pos()))
 				} else if pkgDecorName == "_" {
+					// 若为 "_" 类型导入，强制修改别名为 decor
 					imp.pathObjMap[decoratorPackagePath].Name = nil // rewrite this package import way
 					imp.pathMap[decoratorPackagePath] = "decor"     // mark finished
 					pkgDecorName = "decor"
 				}
 
+				// 如果当前函数已经是 decoratorFunc ，则不许对其 decorate
 				if funIsDecorator(fd, pkgDecorName) {
-					logs.Error(msgCantUsedOnDecoratorFunc, biSymbol,
-						friendlyIDEPosition(fset, fd.Pos()))
+					logs.Error(msgCantUsedOnDecoratorFunc, biSymbol, friendlyIDEPosition(fset, fd.Pos()))
 				}
+
 				// got package path
 				decorPkgPath := ""
 				if x := decorX(decorName); x != "" {
+					// 判断 f 是否已导入 x 包
 					if xPath, ok := imp.importedName(x); ok {
+						// 获取 x 包的别名
 						name, _ := imp.importedPath(xPath)
+						// 如果 x 包的别名为 "_" ，重置其别名
 						if name == "_" {
 							imp.pathObjMap[xPath].Name = nil
 							imp.pathMap[xPath] = x
 						}
 						decorPkgPath = xPath
 					} else {
-						logs.Error(x, "package not found", biSymbol,
-							friendlyIDEPosition(fset, da.doc.Pos()))
+						logs.Error(x, "package not found", biSymbol, friendlyIDEPosition(fset, da.doc.Pos()))
 					}
 				}
 
+				// 获取指定路径 decorPkgPath 下函数 decorName 的参数信息
 				params, err := checkDecorAndGetParam(decorPkgPath, decorName, decorParams)
 				if err != nil {
 					logs.Error(err, biSymbol, "Decor:", friendlyIDEPosition(fset, da.doc.Pos()))

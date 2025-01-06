@@ -32,33 +32,33 @@ const replaceTpl = `    ${.DecorVarName} := &decor.Context{
     ${if .HaveReturn}return ${stringer .DecorCallOut}${end}`
 
 type ReplaceArgs struct {
-	HaveDecorParam,
-	HaveReturn bool
-	TKind, // target kind
-	TargetName,
-	ReceiverVarName, // Receiver var
-	DecorVarName, // decor var
-	DecorCallName, // decor function name . logging
-	FuncMain string // (a, b, c) {raw func}
-	DecorCallParams, // decor function parameters. like "", 0, true, options, default empty
-	InArgNames, // a, b, c
-	OutArgNames, // c, d
-	InArgTypes, // int, int, int
-	OutArgTypes, // int, int
-	DecorListOut, // decor.TargetOut[0], decor.TargetOut[1]
-	DecorCallIn, // decor.TargetIn[0].(int), decor.TargetIn[1].(int), decor.TargetIn[2].(int)
-	DecorCallOut []string // decor.TargetOut[0].(int), decor.TargetOut[1].(int)
+	HaveDecorParam, // 是否有装饰参数，如果有需要引用 DecorCallParams
+	HaveReturn bool // 是否有返回值，如果有需要引用 DecorListOut/DecorCallOut
+	TKind, // target kind // 目标类型，可能是函数、方法等
+	TargetName, // 目标函数或方法的名称
+	ReceiverVarName, // Receiver var  // 目标函数的接收者（适用于方法）
+	DecorVarName, // decor var // 装饰器变量的名称
+	DecorCallName, // decor function name . logging // 装饰器调用函数的名称
+	FuncMain string // (a, b, c) {raw func} // 目标函数
+	DecorCallParams, // decor function parameters. like "", 0, true, options, default empty // 装饰器调用时传递的参数
+	InArgNames, // a, b, c // 输入参数名
+	OutArgNames, // c, d		// 输出参数名
+	InArgTypes, // int, int, int // 输入参数的类型
+	OutArgTypes, // int, int		// 输出参数的类型
+	DecorListOut, // decor.TargetOut[0], decor.TargetOut[1] // 装饰器的输出参数
+	DecorCallIn, // decor.TargetIn[0].(int), decor.TargetIn[1].(int), decor.TargetIn[2].(int) // 装饰器的输入参数
+	DecorCallOut []string // decor.TargetOut[0].(int), decor.TargetOut[1].(int) // 装饰器的输出参数
 }
 
 func newReplaceArgs(gi *genIdentId, targetName, decorName string) *ReplaceArgs {
 	return &ReplaceArgs{
 		false,
 		false,
-		"KFunc", // decor.TKind,
-		`"` + targetName + `"`,
+		"KFunc",                // decor.TKind,
+		`"` + targetName + `"`, // 目标名
 		"nil",
 		gi.nextStr(),
-		decorName,
+		decorName, // 装饰名
 		"",
 		[]string{},
 		[]string{},
@@ -72,6 +72,7 @@ func newReplaceArgs(gi *genIdentId, targetName, decorName string) *ReplaceArgs {
 }
 
 func replace(args *ReplaceArgs) (string, error) {
+	// 通过模板引擎将 ReplaceArgs 中的值替换到模板中的占位符位置，最终生成目标的装饰器代码。
 	tpl, err := template.
 		New("decorReplace").
 		Delims("${", "}").
@@ -232,6 +233,7 @@ func elString(expr ast.Expr) string {
 	return ""
 }
 
+// stringer 是一个自定义的函数，用于将输入参数（如 InArgNames 和 OutArgNames）转换为字符串表示，通常是以逗号分隔的列表。
 func stringer(elems []string) string {
 	if elems == nil {
 		return ""
@@ -442,3 +444,38 @@ func assignStmtPos(f, t ast.Node, depth bool) {
 		logs.Info("can`t support type from assignStmtPos")
 	}
 }
+
+// 示例
+//
+//	假设我们有一个简单的函数：
+//		func Add(a, b int) int {
+//		   return a + b
+//		}
+//
+//	我们为这个函数生成装饰器的代码，传递的 ReplaceArgs 可能是：
+//		ReplaceArgs{
+//		   TKind:           "KFunc",
+//		   TargetName:      `"Add"`,				 // 目标函数
+//		   ReceiverVarName: `"nil"`,
+//		   DecorVarName:    `"AddDecor"`,            // 装饰器变量名
+//		   DecorCallName:   `"AddDecorCall"`,		 // 装饰器函数名
+//		   FuncMain:        `"Add(a, b)"`,			 // 被装饰函数
+//		   InArgNames:      `[]string{"a", "b"}`,	 // 被装饰函数参数列表
+//		   OutArgNames:     `[]string{"result"}`,	 // 被装饰函数返回值列表
+//		   HaveReturn:      true,					 // 是否有返回值
+//		}
+//
+//	在这种情况下，模板将生成类似以下的代码：
+//		AddDecor := &decor.Context{
+//		   Kind:       decor.KFunc,
+//		   TargetName: "Add",
+//		   Receiver:   "nil",
+//		   TargetIn:   []any{"a", "b"},
+//		   TargetOut:  []any{"result"},
+//		}
+//		AddDecor.Func = func() {
+//		   result = Add(a, b)
+//		}
+//		AddDecorCall(AddDecor)
+//		return result
+//
