@@ -76,6 +76,8 @@ func isDecoratorFunc(fd *ast.FuncDecl, pkgName string) bool {
 	return strings.TrimSpace(buffer.String()) == fmt.Sprintf("*%s.Context", pkgName)
 }
 
+// 注意，这里把 {key:"", name:"", age:100, b: false} 转换为 map[string]string ，
+// 是因为其实现上使用了 go parser 将其转换为 []ast.Expr{} ，内部字面量都是用字符串表示的。
 func parseDecorAndParameters(s string) (string, map[string]string, error) {
 	// s like:
 	//   function
@@ -139,6 +141,7 @@ func parseDecorAndParameters(s string) (string, map[string]string, error) {
 	if err != nil {
 		return callName, p.items, err
 	}
+
 	// 将解析后的表达式列表 exprList 转换为参数映射（p.items）
 	if err := decorStmtListToMap(exprList, p); err != nil {
 		return callName, p.items, err

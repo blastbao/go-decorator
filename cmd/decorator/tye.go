@@ -90,7 +90,7 @@ func (m *mapV[K, V]) get(key K) (v V) {
 //   - parameters：装饰器参数。
 type decorAnnotation struct {
 	doc        *ast.Comment      // ast node for doc
-	name       string            // decorator name
+	name       string            // decorator function name
 	parameters map[string]string // options parameters
 }
 

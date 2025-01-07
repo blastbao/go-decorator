@@ -7,6 +7,7 @@ func MathIntegerPlus(a, b int) int {
 }
 
 func DoubleIntegerValue(ctx *decor.Context) {
+
 	ctx.TargetDo()
 	if len(ctx.TargetOut) == 0 {
 		return

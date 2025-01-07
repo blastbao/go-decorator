@@ -89,28 +89,101 @@ func replace(args *ReplaceArgs) (string, error) {
 	return bf.String(), nil
 }
 
+// ast.FuncDecl 结构体：
+//
+//	 FuncDecl struct {
+//			Doc  *CommentGroup // associated documentation; or nil
+//			Recv *FieldList    // receiver (methods); or nil (functions)
+//			Name *Ident        // function/method name
+//			Type *FuncType     // function signature: type and value parameters, results, and position of "func" keyword
+//			Body *BlockStmt    // function body; or nil for external (non-Go) function
+//	}
+//
+// 示例函数：
+//
+//	// This is a sample function
+//	func example(r *ReceiverType, a int) int {
+//	   	return a
+//	}
+//
+// 说明:
+//
+//   - Doc: 注释 // This is a sample function
+//   - Recv: 接收者 (r *ReceiverType)
+//   - Name: 函数或方法名 example
+//   - Type: 函数签名，包括参数和返回值 func(a int) int
+//   - Body: 函数体 { return a }
+//
+// ast.FuncType 结构体：
+//
+//	FuncType struct {
+//		Func       token.Pos  // position of "func" keyword (token.NoPos if there is no "func")
+//		TypeParams *FieldList // type parameters; or nil
+//		Params     *FieldList // (incoming) parameters; non-nil
+//		Results    *FieldList // (outgoing) results; or nil
+//	}
+//
+// 示例函数：
+//
+//	func example[T any](a T, b string) (int, error) {
+//	   return 0, nil
+//	}
+//
+// 说明:
+//   - Func: "func" 关键字的位置。
+//   - TypeParams: 包含类型参数 [T any]。
+//   - Params: 包含输入参数 (a T, b string)。
+//   - Results: 包含返回值 (int, error)。
 func builderReplaceArgs(f *ast.FuncDecl, decorName string, decorParams []string, gi *genIdentId) *ReplaceArgs {
 	ra := newReplaceArgs(gi, f.Name.Name, decorName)
-	// decor params
+
+	// 如果装饰器有参数，填充相关字段
 	if decorParams != nil && len(decorParams) > 0 {
 		ra.HaveDecorParam = true
 		ra.DecorCallParams = decorParams
 	}
-	// target TKind
+
+	// 判断是否有接收者（方法的接收者），并设置其类型
 	if f.Recv != nil && f.Recv.List != nil && len(f.Recv.List) > 0 {
 		ra.TKind = "KMethod"
 		ra.ReceiverVarName = f.Recv.List[0].Names[0].Name
 	}
-	//funcMain
+
+	// 假设我们有以下泛型函数：
+	//
+	//	func Add[T int | float64](a T, b T) T {
+	//    	return a + b
+	//	}
+	//
+	// 将类型(泛型)参数移除后，得到闭包：
+	//
+	//  func(a T, b T) T {
+	// 		return a + b
+	//	}
+	//
+	// Q: 为啥要临时移除泛型类型参数 T ？
+	// A:
+	// Go 的 ast 包和打印机制是根据具体的 AST 节点结构进行操作的，泛型类型参数（如 T）会使 AST 的结构更加复杂。
+	// 如果你直接传递一个包含类型参数的泛型函数到 printer.Fprint，生成的 Go 代码可能过于复杂，或者在打印过程中出现错误。
+	//
+	// 例如，泛型函数的类型参数（TypeParams）通常是一个复杂的类型，特别是在泛型函数使用了联合类型约束（如 int | float64）时。
+	// 这些信息在函数体之外可能并不直接需要。如果直接打印这些复杂信息，可能会引发不必要的困难，尤其是在构造闭包或者处理一些不需要类型参数的情况时。
+	//
+	// 在构建闭包时，泛型类型参数并不直接影响闭包的内部逻辑，通常我们只关心 闭包的函数体，而不是类型参数。
+	// 为了简化这个过程，通过暂时移除泛型类型参数，使得 printer.Fprint 打印出的只是函数体部分，而不包含冗余的泛型信息。
+
 	var tp *ast.FieldList
 	if f.Type != nil && f.Type.TypeParams != nil {
-		tp = f.Type.TypeParams
-		f.Type.TypeParams = nil
+		tp = f.Type.TypeParams  // 将函数的类型参数保存到变量 tp 中，之后会用来恢复类型参数。
+		f.Type.TypeParams = nil // 将函数的类型参数设置为 nil ，这通常是为了在打印或处理函数时避免类型参数的干扰。
 	}
+
+	// 创建了一个匿名函数（闭包），这个闭包继承了函数 f 的类型和函数体。ast.FuncLit 表示 函数字面量（匿名函数）。
 	closure := &ast.FuncLit{
-		Type: f.Type,
-		Body: f.Body,
+		Type: f.Type, // 使用函数 f 的类型，这个类型已经去掉了类型参数
+		Body: f.Body, // 使用函数 f 的函数体
 	}
+
 	var output []byte
 	buffer := bytes.NewBuffer(output)
 	err := printer.Fprint(buffer, token.NewFileSet(), closure)
@@ -118,36 +191,68 @@ func builderReplaceArgs(f *ast.FuncDecl, decorName string, decorParams []string,
 		logs.Error("builderReplaceArgs printer.Fprint fail", decorName, err)
 	}
 	f.Type.TypeParams = tp
-	ra.FuncMain = buffer.String()
+	ra.FuncMain = buffer.String() // 保存闭包的字符串表示
 
-	// in result
+	// 处理函数返回值，收集其名称和类型
+	//
+	//
+	// 假设我们有以下函数，并且没有为返回值提供名称：
+	//
+	//	func Calculate(a, b int) (int, int) {
+	//    	return a + b, a - b
+	//	}
+	//
+	// 假设我们有以下函数：
+	//
+	//	func compute(x int) (int, error) {
+	//	   return x * 2, nil
+	//	}
+	//
+	// 1. f.Type.Results.List 包含两个返回值 (int, error)，因为没有名称，所以为其生成名称如 res1 和 err.
+	// 2. 记录返回值的名称和类型：
+	//	ra.OutArgNames = ["res1", "err"]
+	//	ra.OutArgTypes = ["int", "error"]
+	// 3. 生成装饰器调用：
+	//	ra.DecorListOut = [ "DecorVarName.TargetOut[0]", "DecorVarName.TargetOut[1]" ]
+	//	ra.DecorCallOut = [ "func() int { o, _ := DecorVarName.TargetOut[0].(int); return o }()", "func() error { o, _ := DecorVarName.TargetOut[1].(error); return o }()" ]
+
+	// 检查该函数是否有返回值
 	if f.Type.Results != nil && f.Type.Results.List != nil {
+		// 遍历返回值
 		for _, r := range f.Type.Results.List {
+			// 返回值已经有名称，不需要生成新的名称，跳过
 			if r.Names != nil {
 				continue
 			}
+			// 返回值没有名称，为其生成一个新的名字
 			r.Names = []*ast.Ident{
 				{
 					NamePos: 0,
-					Name:    gi.nextStr(),
+					Name:    gi.nextStr(), // 生成新的名称（一个递增的标识符）
 					Obj:     nil,
 				},
 			}
 		}
+
+		// 返回值序号
 		count := 0
+		// 遍历返回值
 		for _, r := range f.Type.Results.List {
 			if len(r.Names) == 0 {
 				continue
 			}
+			// 遍历当前返回值的名称（每个返回值可能有多个名称）
 			for _, p := range r.Names {
+				// 如果返回值的名称为 "_" ，为它生成一个新的名字。
 				if p.Name == "_" {
 					// fix issue #10. If the parameter name is “_”, we need to create a new name to replace it since the context will use this variable
 					p.Name = gi.nextStr()
 				}
+				// 将返回值名称添加到 ra.OutArgNames 中。
 				ra.OutArgNames = append(ra.OutArgNames, p.Name)
+				// 将返回值类型添加到 ra.OutArgTypes 中。typeString 是一个方法，用于将返回值的类型转换为字符串形式。
 				ra.OutArgTypes = append(ra.OutArgTypes, typeString(r.Type))
-				ra.DecorListOut = append(ra.DecorListOut,
-					fmt.Sprintf("%s.TargetOut[%d]", ra.DecorVarName, count))
+				ra.DecorListOut = append(ra.DecorListOut, fmt.Sprintf("%s.TargetOut[%d]", ra.DecorVarName, count))
 				ra.DecorCallOut = append(ra.DecorCallOut,
 					//fmt.Sprintf("%s.TargetOut[%d].(%s)", ra.DecorVarName, count, typeString(r.Type)))
 					fmt.Sprintf(
@@ -158,25 +263,36 @@ func builderReplaceArgs(f *ast.FuncDecl, decorName string, decorParams []string,
 						typeString(r.Type),
 					),
 				)
+
+				// 处理下一个返回值。
 				count++
 			}
 		}
 	}
 
-	// in args
+	// 检查函数的参数列表是否存在且非空
 	if f.Type.Params.List != nil && len(f.Type.Params.List) > 0 {
+		// 给每个参数分配一个唯一的索引值
 		count := 0
+		// 遍历参数列表
 		for _, r := range f.Type.Params.List {
+			// 如果参数没有名称（例如 _），就跳过
 			if len(r.Names) == 0 {
 				continue
 			}
+			// 遍历每个参数的名称
 			for _, p := range r.Names {
+				// 生成的新名称
 				if p.Name == "_" {
 					// fix issue #10. If the parameter name is “_”, we need to create a new name to replace it since the context will use this variable
 					p.Name = gi.nextStr()
 				}
+				// 存储所有输入参数的名称。
 				ra.InArgNames = append(ra.InArgNames, p.Name)
+				// 存储所有输入参数的类型。
 				ra.InArgTypes = append(ra.InArgTypes, typeString(r.Type))
+
+				// 闭包函数：func() int { o,_ := decorator.TargetIn[0].(int); return o }()
 				ra.DecorCallIn = append(ra.DecorCallIn,
 					//fmt.Sprintf("%s.TargetIn[%d].(%s)%s", ra.DecorVarName, count, typeString(r.Type), elString(r.Type)))
 					fmt.Sprintf(

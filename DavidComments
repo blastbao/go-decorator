@@ -1,0 +1,35 @@
+
+
+
+
+
+给定一个函数：
+
+func calculate(a int, b int) int {
+    return a + b
+}
+
+如果我们想对其增加 Trace Decorate ，生成的代码可能是
+
+func calculate(a int, b int) int {
+    trace.Begin()
+    defer trace.End()
+    return a + b
+}
+
+实现上：
+
+func calculate(a int, b int) (c int) {
+    TraceDecorateCtx := {
+        Inputs:  []any{a, b},
+        Outputs: []any{c},
+        Func: func(ins []any) outs[]any {
+            outs[0] = calculate(ins[0], ins[1])
+        }
+    }
+    func (c *TraceDecorateCtx) Do() {
+        trace.Begin()
+        defer trace.End()
+        c.Outputs = c.Func(c.Inputs)
+    }
+}
